@@ -1,0 +1,6 @@
+{
+  "editor.hover.enabled": true,
+  "editor.hover.delay": 300,
+  "rust-analyzer.linkedProjects": ["Cargo.toml"],
+  "rust-analyzer.cargo.loadOutDirsFromCheck": true
+}

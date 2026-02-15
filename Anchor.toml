@@ -6,7 +6,8 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-simple_vault = "GUzXfawBYFxQERMpekKDSiasCiNksgKNa6ix9kvZ9F4M"
+simple_escrow = "6i4KGtUUZVSxiJfwySQAoKQVo14FZyaSNUBuKPsJD5cj"
+simple_vault = "AvnLFFmAEhgb24GCcuPAXxeQjXiGCJ97W55wewnF7dWW"
 
 [registry]
 url = "https://api.apr.dev"
@@ -17,3 +18,5 @@ wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
+test_vault = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/simple-vault.ts\""
+test_escrow = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/escrow.ts\""
