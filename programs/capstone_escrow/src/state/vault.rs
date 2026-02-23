@@ -3,7 +3,6 @@ use anchor_lang::prelude::*;
 #[account]
 #[derive(InitSpace)]
 pub struct Vault {
-    #[max_len(256)]
     pub merkle_root: [u8; 32], // 32 bytes
     pub start_timestamp: u64,
     pub end_timestamp: u64,
@@ -25,6 +24,4 @@ impl Vault {
     pub fn is_active(&self) -> Result<bool> {
         Ok(self.has_started()? && !self.has_ended()?)
     }
-
-
 }
