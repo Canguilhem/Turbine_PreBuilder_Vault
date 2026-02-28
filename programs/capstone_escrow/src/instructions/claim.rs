@@ -5,7 +5,7 @@ use anchor_spl::{
     
 };
 
-use crate::{close_token_account,transfer_tokens, utils::merkletree::{leaf_hash, verify}};
+use crate::{ClaimEvent, close_token_account, transfer_tokens, utils::merkletree::{leaf_hash, verify}};
 use crate::{ClaimVault, MyError, Vault};
 
 #[derive(Accounts)]
@@ -67,6 +67,11 @@ impl<'info> Claim<'info> {
         let now = Clock::get()?.unix_timestamp as u64;
         let allocation = self.vault.user_allocation;
 
+        require!(
+            !self.vault.has_ended()?,
+            MyError::VaultNotActive
+        );
+
         // if first claim, verify proof
         if self.user_vault.last_claim_timestamp == 0 {
             require!(!proofs.is_empty(), MyError::MissingProof);
@@ -79,7 +84,7 @@ impl<'info> Claim<'info> {
             let claimable = self.calculate_claim_amount(self.user_vault.amount)?;
             let unvested = allocation - claimable;
 
-            require!(claimable > 0 || unvested > 0, MyError::InvalidClaimAmount);
+            require!(claimable > 0 || unvested > 0, MyError::InvalidAmount);
 
             let vault_seeds = &[
                 b"vault",
@@ -123,7 +128,7 @@ impl<'info> Claim<'info> {
 
             let claimable = self.calculate_claim_amount(self.user_vault.amount)?;
 
-            require!(claimable > 0, MyError::InvalidClaimAmount);
+            require!(claimable > 0, MyError::InvalidAmount);
 
             let vault_key = self.vault.key();
             let user_key = self.user.key();
@@ -176,16 +181,17 @@ impl<'info> Claim<'info> {
             let vested_u128 = (allocation as u128)
                 .checked_mul(elapsed as u128)
                 .and_then(|v| v.checked_div(time_window as u128))
-                .ok_or(MyError::VestingOverflow)?;
+                .ok_or(MyError::MathOverflow)?;
     
-            u64::try_from(vested_u128).map_err(|_| MyError::VestingOverflow)?
+            u64::try_from(vested_u128).map_err(|_| MyError::MathOverflow)?
         };
     
        Ok(vested
             .checked_sub(amount_claimed_so_far)
-            .ok_or(MyError::VestingOverflow)?)
+            .ok_or(MyError::MathOverflow)?)
     }
 
+    // keep user_vault open to prevent double claiming
     fn close_user_claim_accounts(&mut self) -> Result<()> {
 
         let user_vault_bump = [self.user_vault.bump];
@@ -204,8 +210,6 @@ impl<'info> Claim<'info> {
             &self.token_program,
             Some(claim_vault_seeds),
         )?;
-
-        self.user_vault.close(self.user.to_account_info())?;
 
         Ok(())
     
@@ -226,6 +230,12 @@ impl<'info> Claim<'info> {
         if new_amount == self.vault.user_allocation {
             self.close_user_claim_accounts()?;
         }
+
+        emit!(ClaimEvent {
+            user: self.user.key(),
+            amount: new_amount,
+            last_claim_timestamp: now,
+        });
 
         Ok(())
     }

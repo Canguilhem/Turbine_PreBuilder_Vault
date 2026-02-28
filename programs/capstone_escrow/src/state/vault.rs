@@ -10,18 +10,12 @@ pub struct Vault {
     pub maker: Pubkey,
     pub token_to_claim: Pubkey,
     pub user_allocation: u64,
+    pub grace_period: u64, // period of time after end_timestamp where maker can clawback/close the vault
     pub bump: u8,
 }
 
 impl Vault {
     pub fn has_ended(&self) -> Result<bool> {
-        Ok(Clock::get()?.unix_timestamp as u64 >= self.end_timestamp)
-    }
-
-    pub fn has_started(&self) -> Result<bool> {
-        Ok(Clock::get()?.unix_timestamp as u64 >= self.start_timestamp)
-    }
-    pub fn is_active(&self) -> Result<bool> {
-        Ok(self.has_started()? && !self.has_ended()?)
+        Ok(Clock::get()?.unix_timestamp as u64 >= self.end_timestamp + self.grace_period)
     }
 }

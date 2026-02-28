@@ -10,18 +10,24 @@ pub enum MyError {
     InvalidTimeWindow,
     #[msg("User allocation is invalid")]
     InvalidUserAllocation,
+    #[msg("Deposit is invalid")]
+    InvalidDeposit,
     #[msg("Proof is invalid")]
     InvalidProof,
     #[msg("Missing proof")]
     MissingProof,
-    #[msg("Claim amount is invalid")]
-    InvalidClaimAmount,
+    #[msg("Amount is invalid")]
+    InvalidAmount,
     #[msg("Vault is not active")]
     VaultNotActive,
-    #[msg("Vesting calculation overflow")]
-    VestingOverflow,
+    #[msg("Calculation overflow")]
+    MathOverflow,
     #[msg("Schedule error")]
     ScheduleError,
     #[msg("Transfer failed")]
     TransferFailed,
+    #[msg("Clawback period is invalid")]
+    InvalidClawbackPeriod,
+    #[msg("Grace period not ended")]
+    GracePeriodNotEnded,
 }

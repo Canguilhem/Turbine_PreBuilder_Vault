@@ -53,6 +53,7 @@ impl<'info> Init<'info> {
         start_timestamp: u64,
         end_timestamp: u64,
         user_allocation: u64,
+        clawback_buffer: u64,
         bumps: &InitBumps,
     ) -> Result<()> {
         self.validate_init_vault(
@@ -60,6 +61,7 @@ impl<'info> Init<'info> {
             &start_timestamp,
             &end_timestamp,
             &user_allocation,
+            &clawback_buffer,
         )?;
 
         self.vault.set_inner(Vault {
@@ -70,12 +72,17 @@ impl<'info> Init<'info> {
             maker: self.payer.key(),
             token_to_claim: self.mint_to_claim.key(),
             user_allocation: user_allocation,
+            grace_period: clawback_buffer,
             bump: bumps.vault,
         });
         Ok(())
     }
 
     pub fn deposit(&mut self, deposit: u64) -> Result<()> {
+
+        // confirm deposit modulo user allocation is 0
+        require!(deposit > 0 && deposit % self.vault.user_allocation == 0, MyError::InvalidDeposit);
+
         transfer_tokens(
             &self.payer_ata,
             &self.vault_ata,
@@ -92,14 +99,17 @@ impl<'info> Init<'info> {
     // - start timestamp is not 0
     // - end timestamp is not 0
     // - start timestamp is less than end timestamp
-    // - user allocation is positive
+    // - user allocation is not 0
+    // - clawback buffer is at least 7 days
     fn validate_init_vault(
         &self,
         merkle_root: &[u8; 32],
         start_timestamp: &u64,
         end_timestamp: &u64,
         user_allocation: &u64,
+        clawback_buffer: &u64,
     ) -> Result<()> {
+        
         if merkle_root.len() != 32 {
             // 32 bytes
             return err!(MyError::InvalidMerkleRoot);
@@ -109,6 +119,9 @@ impl<'info> Init<'info> {
         }
         if *user_allocation == 0 {
             return err!(MyError::InvalidUserAllocation);
+        }
+        if *clawback_buffer < 7 * 24 * 60 * 60 {
+            return err!(MyError::InvalidClawbackPeriod);
         }
         Ok(())
     }

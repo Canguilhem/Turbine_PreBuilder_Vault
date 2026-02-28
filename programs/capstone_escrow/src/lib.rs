@@ -23,6 +23,7 @@ pub mod capstone_escrow {
         start_timestamp: u64,
         end_timestamp: u64,
         user_allocation: u64,
+        clawback_buffer: u64,
         deposit: u64,
     ) -> Result<()> {
         ctx.accounts.init_vault(
@@ -31,6 +32,7 @@ pub mod capstone_escrow {
             start_timestamp,
             end_timestamp,
             user_allocation,
+            clawback_buffer,
             &ctx.bumps,
         )?;
         ctx.accounts.deposit(deposit)?;
@@ -39,6 +41,16 @@ pub mod capstone_escrow {
 
     pub fn claim(ctx: Context<Claim>, proofs: Vec<[u8; 33]>) -> Result<()> {
         ctx.accounts.claim(proofs, &ctx.bumps)?;
+        Ok(())
+    }
+
+    pub fn close_vault(ctx: Context<CloseVault>) -> Result<()> {
+        ctx.accounts.close_vault()?;
+        Ok(())
+    }
+
+    pub fn clawback(ctx: Context<Clawback>) -> Result<()> {
+        ctx.accounts.clawback()?;
         Ok(())
     }
 }
