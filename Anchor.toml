@@ -11,6 +11,9 @@ counter_workshop = "BYUcc691Vjc4ZcyMX7j7gAiFdQQv5usu3CJkrQXLqJ6B"
 simple_escrow = "6i4KGtUUZVSxiJfwySQAoKQVo14FZyaSNUBuKPsJD5cj"
 simple_vault = "AvnLFFmAEhgb24GCcuPAXxeQjXiGCJ97W55wewnF7dWW"
 
+[programs.devnet]
+capstone_escrow = "3uc4VYyZysCNZ3zKGbcbNnARFi2fHEPrBSSCXGC5Qjwf"
+
 [registry]
 url = "https://api.apr.dev"
 
@@ -19,6 +22,7 @@ cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
-test_escrow = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/escrow.ts\""
-test_vault = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/simple-vault.ts\""
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/capstone.ts\""
+test_devnet = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/capstone.devnet.ts\""
+
+

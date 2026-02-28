@@ -1,0 +1,32 @@
+
+signer "payer" "svm::secret_key" {
+    description = "Pays fees for program deployments and operations"
+    keypair_json = "~/.config/solana/id.json"
+    // See documentation for other options (mnemonic, etc): https://docs.surfpool.run/iac/svm/signers
+}
+    
+signer "authority" "svm::secret_key" {
+    description = "Can upgrade programs and manage critical ops"
+    keypair_json = "~/.config/solana/id.json"
+}
+
+
+signer "creator" "svm::secret_key" {
+    description = "Will init schedules"
+    keypair_json = "keypairs/creator.json"
+}
+
+signer "claimer1" "svm::secret_key" {
+    description = "Whitelisted in schedule-1"
+    keypair_json = "keypairs/whitelisted_1.json"
+}
+
+signer "claimer2" "svm::secret_key" {
+    description = "Whitelisted in schedule-2"
+    keypair_json = "keypairs/whitelisted_2.json"
+}
+
+signer "notWLed" "svm::secret_key" {
+    description = "not whitelisted"
+    keypair_json = "keypairs/not_whitelisted.json"
+}

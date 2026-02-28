@@ -1,0 +1,73 @@
+################################################################
+# Manage simple-vault deployment through Crypto Infrastructure as Code
+################################################################
+
+addon "svm" {
+    rpc_api_url = input.rpc_api_url
+    network_id = input.network_id
+}
+
+action "deploy_capstone_escrow" "svm::deploy_program" {
+    description = "Deploy capstone program"
+    program = svm::get_program_from_anchor_project("capstone_escrow") 
+    authority = signer.authority
+    payer = signer.payer
+    // Optional: if you want to deploy the program via a cheatcode when targeting a Surfnet, set `instant_surfnet_deployment = true`
+    // Deploying via a cheatcode will write the program data directly to the program account, rather than sending transactions.
+    // This will make deployments instantaneous, but is deviating from how the deployments will take place on devnet/mainnet.
+    // instant_surfnet_deployment = true
+}
+
+variable "init_instruction_data" {
+  value = svm::get_instruction_data_from_idl_path(
+    "target/idl/capstone_escrow.json",
+    "initialize",
+    [variable.seed, variable.merkle_root, variable.start_ts, variable.end_ts, variable.user_allocation, variable.deposit]
+  )
+}
+
+output "init_instruction" {
+    value = variable.init_instruction_data
+}
+
+
+
+variable "usdc_mint" { value = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"}
+variable "token_program_id" { value = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" }
+
+variable "capstone" {
+    value = svm::get_program_from_anchor_project("capstone_escrow")
+}
+
+variable "seed" { value = 1 }
+variable "user_allocation" { value = 1000000000000 }  // 1M tokens (6 decimals)
+variable "deposit" { value = 10000000000000 }        // 10 users worth
+variable "merkle_root_hex" {
+  value = "0xc7181851fc22dde3298176bace53bae73e8f2f25eb499ea3b25db8a810ba0dd5"
+}
+
+variable "merkle_root" {
+  value = std::decode_hex(variable.merkle_root_hex)
+}
+variable "start_ts" { value = 100 }  // needs current time
+variable "end_ts" { value = 3000 }
+
+
+
+action "init_schedule" "svm::process_instructions" {
+  instruction {
+    program_idl = variable.capstone.idl
+        
+    instruction_name = "initialize"
+    instruction_args = [variable.seed, variable.merkle_root, variable.start_ts, variable.end_ts, variable.user_allocation, variable.deposit]
+    mint_to_claim { public_key = variable.usdc_mint }
+    token_program {
+        public_key = variable.token_program_id
+    }
+    payer {
+        public_key = signer.creator.public_key
+    }
+  }
+
+  signers = [signer.creator]
+}
