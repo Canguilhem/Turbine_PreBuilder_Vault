@@ -7,187 +7,17 @@ import {
   createMint,
   mintTo,
   createAssociatedTokenAccountInstruction,
-  TOKEN_PROGRAM_ID,
-  ASSOCIATED_TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
-import { readFileSync } from "fs";
-import { getCurrentTimestamp, warpToTimestamp } from "./helper";
 
-// {
-//     wl1: '4wQQJM9LNuhinieNAqmHuPCm8LXDTVfhx84P32nAVE9P',
-//     wl2: 'H87xi4CUqrUPXzppV3jotTmre6DyR5pCaMk5bKQQBFTg',
-//     creator: '3vQALgoWfBCHXVS9FTruSALzi9nkKkT55H6aKykiEYVU',
-//     notWhitelisted: 'ErV63ApqLgh1Je5PdiVj6kzwkKJmLjKV41QoN9U4BNag'
-//   }
-const loadKeypairs = () => {
-  const whitlisted1 = JSON.parse(
-    readFileSync("keypairs/whitelisted_1.json", "utf8"),
-  );
-  const whitlisted1Keypair = anchor.web3.Keypair.fromSecretKey(
-    Uint8Array.from(whitlisted1),
-  );
-
-  const whitlisted2 = JSON.parse(
-    readFileSync("keypairs/whitelisted_2.json", "utf8"),
-  );
-  const whitlisted2Keypair = anchor.web3.Keypair.fromSecretKey(
-    Uint8Array.from(whitlisted2),
-  );
-
-  const creator = JSON.parse(readFileSync("keypairs/creator.json", "utf8"));
-  const creatorKeypair = anchor.web3.Keypair.fromSecretKey(
-    Uint8Array.from(creator),
-  );
-
-  const notWhitelisted = JSON.parse(
-    readFileSync("keypairs/not_whitelisted.json", "utf8"),
-  );
-  const notWhitelistedKeypair = anchor.web3.Keypair.fromSecretKey(
-    Uint8Array.from(notWhitelisted),
-  );
-
-  return {
-    whitlisted1Keypair,
-    whitlisted2Keypair,
-    creatorKeypair,
-    notWhitelistedKeypair,
-  };
-};
-
-const getProofs = (merkleData: any, claimer: anchor.web3.PublicKey) => {
-  const claimerKey = Object.keys(merkleData).find(
-    (k) => k !== "merkleRoot" && k === claimer.toBase58().toLowerCase(),
-  );
-  const proofStrings = merkleData[claimerKey][0].proofs as string[];
-  return proofStrings.map((p) => {
-    const hex = p.startsWith("0x") ? p.slice(2) : p;
-    const buf = Buffer.from(hex, "hex");
-    return Array.from(buf) as number[];
-  });
-};
-
-async function claimTokens(
-  provider: anchor.AnchorProvider,
-  proofs: number[][],
-  userPk: anchor.web3.PublicKey,
-  vaultPda: anchor.web3.PublicKey,
-  program: anchor.Program<CapstoneEscrow>,
-  mint: anchor.web3.PublicKey,
-  signer: anchor.web3.Keypair,
-  vaultAta: anchor.web3.PublicKey,
-) {
-  const [claimVaultPda] = anchor.web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("claim_vault"), vaultPda.toBuffer(), userPk.toBuffer()],
-    program.programId,
-  );
-  const userVaultAta = getAssociatedTokenAddressSync(mint, claimVaultPda, true);
-  const userAta = getAssociatedTokenAddressSync(mint, userPk);
-  //   vault state
-  const vault = await program.account.vault.fetch(vaultPda);
-  const allocation = vault.userAllocation.toNumber();
-
-  //   get initial user balance
-  let initialUserBalance = "0";
-  try {
-    initialUserBalance = (
-      await provider.connection.getTokenAccountBalance(userAta)
-    ).value.amount;
-  } catch (error) {
-    // ATA doesnt exist yet
-  }
-
-  let now = await getCurrentTimestamp(provider);
-
-  await program.methods
-    .claim(proofs)
-    .accountsStrict({
-      user: userPk,
-      vault: vaultPda,
-      userVault: claimVaultPda,
-      userVaultAta: userVaultAta,
-      userAta: userAta,
-      mintToClaim: mint,
-      vaultAta,
-      systemProgram: anchor.web3.SystemProgram.programId,
-      tokenProgram: TOKEN_PROGRAM_ID,
-      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-    })
-    .signers([signer])
-    .rpc();
-
-  //   balances check - if all allocated tokens are claimed, accounts will be closed
-  let userVaultBalance: string | null = null;
-  let claimVault: any;
-
-  const finalUserBalance = (
-    await provider.connection.getTokenAccountBalance(userAta)
-  ).value.amount;
-
-  const vaultBalance = (
-    await provider.connection.getTokenAccountBalance(vaultAta)
-  ).value.amount;
-
-  const userVaultInfo = await provider.connection.getAccountInfo(userVaultAta);
-  if (userVaultInfo) {
-    userVaultBalance = (
-      await provider.connection.getTokenAccountBalance(userVaultAta)
-    ).value.amount;
-  }
-
-  //   let amountClaimedSoFar = "0";
-
-  const claimVaultInfo = await provider.connection.getAccountInfo(
-    claimVaultPda,
-  );
-  if (claimVaultInfo) {
-    claimVault = await program.account.claimVault.fetch(claimVaultPda);
-    // assuming no transfers from userATA: finalUserBalance should equal claimVault.amount
-    expect(finalUserBalance).to.equal(claimVault.amount.toString());
-
-    const totalBalance = new anchor.BN(userVaultBalance).add(
-      new anchor.BN(finalUserBalance),
-    );
-    // userVaultBalance balance + userBalance should equal token allocation
-    expect(totalBalance.toNumber()).to.equal(allocation);
-  } else {
-    // assuming no transfers from userATA: finalUserBalance should equal allocation
-    expect(finalUserBalance).to.equal(allocation.toString());
-    // userVaultAta should be closed
-    const userVaultAtaInfo = await provider.connection.getAccountInfo(
-      userVaultAta,
-    );
-    // userVaultAta should be closed
-    expect(userVaultAtaInfo).to.be.null;
-  }
-
-  console.log("balance check claim:", {
-    userPk: userPk.toBase58(),
-    now,
-    start: vault.startTimestamp.toNumber(),
-    end: vault.endTimestamp.toNumber(),
-    allocation,
-    vaultBalance,
-    userVaultBalance,
-    initialUserBalance,
-    finalUserBalance,
-  });
-
-  return { userVaultAta, userAta, claimVaultPda };
-}
-
-const fundWallets = async (
-  provider: anchor.AnchorProvider,
-  wallets: anchor.web3.PublicKey[],
-) => {
-  await Promise.all(
-    wallets.map(async (walletPk) => {
-      provider.connection.requestAirdrop(
-        walletPk,
-        10 * anchor.web3.LAMPORTS_PER_SOL,
-      );
-    }),
-  );
-};
+import {
+  claimTokens,
+  fundWallets,
+  getCurrentTimestamp,
+  getProofs,
+  initVault,
+  loadKeypairs,
+  loadMerkleData,
+} from "./helper";
 
 describe("capstone-escrow - localnet", () => {
   const provider = anchor.AnchorProvider.env();
@@ -207,26 +37,17 @@ describe("capstone-escrow - localnet", () => {
 
   let mint: anchor.web3.PublicKey;
   let makerAta: anchor.web3.PublicKey;
-  let vaultPda: anchor.web3.PublicKey;
-  let vaultAta: anchor.web3.PublicKey;
 
-  const seed = new anchor.BN(Date.now());
-  const userAllocation = 1_000_000_000_000; // 1M base units (6 decimals)
-  const depositAmount = userAllocation * 10; // enough for 10 users
+  const { merkleRoot, merkleData } = loadMerkleData(
+    "utils/data/merkle_proofs.json",
+  );
 
-  let now: number;
-  let startTimestamp: anchor.BN;
-  let endTimestamp: anchor.BN;
-  // Schedule: start now, end in 30 days
+  const userAllocation = new anchor.BN(1_000_000_000_000); // 1M base units (6 decimals)
+  const depositAmount = userAllocation.mul(new anchor.BN(10)); // enough for 10 users
 
-  let merkleRoot: Buffer;
-  let merkleData: any;
+  const MIN_GRACE_PERIOD = new anchor.BN(7 * 24 * 60 * 60);
 
   before(async () => {
-    now = await getCurrentTimestamp(provider);
-    startTimestamp = new anchor.BN(now);
-    endTimestamp = new anchor.BN(now + 30 * 24 * 60 * 60);
-
     // airdrop users
     await fundWallets(provider, [
       maker,
@@ -235,13 +56,6 @@ describe("capstone-escrow - localnet", () => {
       creatorKeypair.publicKey,
       notWhitelistedKeypair.publicKey,
     ]);
-
-    // Load merkle data from generated file
-    merkleData = JSON.parse(
-      readFileSync("utils/data/merkle_proofs.json", "utf8"),
-    );
-    merkleRoot = Buffer.from(merkleData.merkleRoot, "hex");
-    if (merkleRoot.length !== 32) throw new Error("Invalid merkle root length");
 
     // Create mint (6 decimals)
     mint = await createMint(
@@ -268,52 +82,41 @@ describe("capstone-escrow - localnet", () => {
       mint,
       makerAta,
       maker,
-      depositAmount,
+      depositAmount.toNumber() * 3, //enough to initialize 3 vaults
     );
-
-    [vaultPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("vault"),
-        maker.toBuffer(),
-        seed.toArrayLike(Buffer, "le", 8),
-      ],
-      program.programId,
-    );
-    vaultAta = getAssociatedTokenAddressSync(mint, vaultPda, true);
   });
 
   it("Should successfully initialize vault and deposit tokens", async () => {
-    await program.methods
-      .initialize(
-        seed,
-        Array.from(merkleRoot),
-        startTimestamp,
-        endTimestamp,
-        new anchor.BN(userAllocation),
-        new anchor.BN(30 * 24 * 60 * 60),
-        new anchor.BN(depositAmount),
-      )
-      .accountsStrict({
-        payer: maker,
-        vault: vaultPda,
-        mintToClaim: mint,
-        payerAta: makerAta,
-        vaultAta,
-        systemProgram: anchor.web3.SystemProgram.programId,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-      })
-      .rpc();
+    // Vault setup:
+    const startDaysOffset = 20;
+    const endDaysOffset = 30;
+
+    const { vaultPda, vaultAta, seed, startTimestamp, endTimestamp } =
+      await initVault(
+        provider,
+        startDaysOffset,
+        endDaysOffset,
+        makerAta,
+        program,
+        merkleRoot,
+        userAllocation,
+        MIN_GRACE_PERIOD,
+        depositAmount,
+        maker,
+        mint,
+      );
 
     const vault = await program.account.vault.fetch(vaultPda);
+
     // confirm vault state
     expect(vault.merkleRoot).to.deep.equal(Array.from(merkleRoot));
-    expect(vault.userAllocation.toNumber()).to.equal(userAllocation);
+    expect(vault.userAllocation.toNumber()).to.equal(userAllocation.toNumber());
     expect(vault.startTimestamp.toNumber()).to.equal(startTimestamp.toNumber());
     expect(vault.endTimestamp.toNumber()).to.equal(endTimestamp.toNumber());
     expect(vault.seed.toNumber()).to.equal(seed.toNumber());
     expect(vault.maker.toBase58()).to.equal(maker.toBase58());
     expect(vault.tokenToClaim.toBase58()).to.equal(mint.toBase58());
+    expect(vault.gracePeriod.toNumber()).to.equal(MIN_GRACE_PERIOD.toNumber());
 
     const vaultBalance = (
       await provider.connection.getTokenAccountBalance(vaultAta)
@@ -321,17 +124,168 @@ describe("capstone-escrow - localnet", () => {
     expect(vaultBalance).to.equal(depositAmount.toString());
   });
 
-  it("test time travel", async () => {
-    const before = await getCurrentTimestamp(provider);
-    const after = before + 10000;
-    await warpToTimestamp(provider, after * 1000);
+  // it("Should successfully clawback tokens", async () => {
+  //   const jumpToTimestamp = endTimestamp
+  //     .add(MIN_GRACE_PERIOD)
+  //     .add(new anchor.BN(10))
+  //     .mul(new anchor.BN(1000))
+  //     .toNumber();
+  //   await warpToTimestamp(provider, jumpToTimestamp);
+  //   now = await getCurrentTimestamp(provider);
+  //   // expect(now * 1000).to.equal(jumpToTimestamp);
 
-    now = await getCurrentTimestamp(provider);
-    expect(now).to.equal(after);
+  //   const [claimVaultPda] = anchor.web3.PublicKey.findProgramAddressSync(
+  //     [
+  //       Buffer.from("claim_vault"),
+  //       vaultPda.toBuffer(),
+  //       whitlisted2Keypair.publicKey.toBuffer(),
+  //     ],
+  //     program.programId,
+  //   );
+  //   const userVaultAta = getAssociatedTokenAddressSync(
+  //     mint,
+  //     claimVaultPda,
+  //     true,
+  //   );
+  //   try {
+  //     await program.methods
+  //       .clawback()
+  //       .accountsStrict({
+  //         maker,
+  //         vault: vaultPda,
+  //         mintToClaim: mint,
+  //         user: whitlisted2Keypair.publicKey,
+  //         userVault: claimVaultPda,
+  //         userVaultAta: userVaultAta,
+  //         vaultAta,
+  //         systemProgram: anchor.web3.SystemProgram.programId,
+  //         tokenProgram: TOKEN_PROGRAM_ID,
+  //         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+  //       })
+  //       .rpc();
+  //   } catch (err) {
+  //     console.log(err.toString());
+  //   }
+  // });
+
+  it("Should fail to initialize new vault with invalid deposit", async () => {
+    try {
+      // Vault setup:
+      const startDaysOffset = 20;
+      const endDaysOffset = 30;
+
+      await initVault(
+        provider,
+        startDaysOffset,
+        endDaysOffset,
+        makerAta,
+        program,
+        merkleRoot,
+        userAllocation.add(new anchor.BN(1)),
+        MIN_GRACE_PERIOD,
+        depositAmount,
+        maker,
+        mint,
+      );
+      expect.fail("Expected transaction to fail, but it succeeded");
+    } catch (err) {
+      expect(err.toString()).to.include("InvalidDeposit");
+    }
+  });
+});
+
+describe("Claim tokens at diffrent times", () => {
+  const provider = anchor.AnchorProvider.env();
+
+  anchor.setProvider(provider);
+
+  const program = anchor.workspace.capstoneEscrow as Program<CapstoneEscrow>;
+  const maker = provider.wallet.publicKey;
+
+  //   read private keys and get user public keys
+  const {
+    whitlisted1Keypair,
+    whitlisted2Keypair,
+    creatorKeypair,
+    notWhitelistedKeypair,
+  } = loadKeypairs();
+
+  let mint: anchor.web3.PublicKey;
+  let makerAta: anchor.web3.PublicKey;
+
+  const { merkleRoot, merkleData } = loadMerkleData(
+    "utils/data/merkle_proofs.json",
+  );
+
+  //  valid proofs for wl-2 we'll use with another user
+  const incorrectProofs = getProofs(merkleData, whitlisted2Keypair.publicKey);
+
+  const correctProofs = getProofs(merkleData, whitlisted1Keypair.publicKey);
+
+  const userAllocation = new anchor.BN(1_000_000_000_000); // 1M base units (6 decimals)
+  const depositAmount = userAllocation.mul(new anchor.BN(10)); // enough for 10 users
+  const MIN_GRACE_PERIOD = new anchor.BN(7 * 24 * 60 * 60);
+
+  before(async () => {
+    // airdrop users
+    await fundWallets(provider, [
+      maker,
+      whitlisted1Keypair.publicKey,
+      whitlisted2Keypair.publicKey,
+      creatorKeypair.publicKey,
+      notWhitelistedKeypair.publicKey,
+    ]);
   });
 
-  it("Successfully claim tokens with whitelisted address", async () => {
-    const correctProofs = getProofs(merkleData, whitlisted1Keypair.publicKey);
+  // use new mint for each token so our claim amount comparisons are accurate
+  beforeEach(async () => {
+    // Create mint (6 decimals)
+    mint = await createMint(
+      provider.connection,
+      provider.wallet.payer,
+      maker,
+      null,
+      6,
+    );
+
+    makerAta = getAssociatedTokenAddressSync(mint, maker);
+    const makerAtaIx = createAssociatedTokenAccountInstruction(
+      maker,
+      makerAta,
+      maker,
+      mint,
+    );
+    await provider.sendAndConfirm(
+      new anchor.web3.Transaction().add(makerAtaIx),
+    );
+    await mintTo(
+      provider.connection,
+      provider.wallet.payer,
+      mint,
+      makerAta,
+      maker,
+      depositAmount.toNumber(),
+    );
+  });
+
+  it("Success elapsed: 10% claim w/ WL-1", async () => {
+    // Vault setup:
+    const startDaysOffset = 1;
+    const endDaysOffset = 9;
+
+    const { vaultPda, vaultAta } = await initVault(
+      provider,
+      startDaysOffset,
+      endDaysOffset,
+      makerAta,
+      program,
+      merkleRoot,
+      userAllocation,
+      MIN_GRACE_PERIOD,
+      depositAmount,
+      maker,
+      mint,
+    );
 
     const wLUserPk = whitlisted1Keypair.publicKey;
     await claimTokens(
@@ -346,11 +300,10 @@ describe("capstone-escrow - localnet", () => {
     );
 
     // jumping to end of schedule
-    await warpToTimestamp(provider, (endTimestamp.toNumber() + 10) * 1000);
+    // await warpToTimestamp(provider, (endTimestamp.toNumber() + 10) * 1000);
+    await new Promise((r) => setTimeout(r, 5000));
 
     // using incorrect proof on second claim shouldn't fail
-    const incorrectProofs = getProofs(merkleData, whitlisted2Keypair.publicKey);
-
     await claimTokens(
       provider,
       incorrectProofs,
@@ -361,8 +314,102 @@ describe("capstone-escrow - localnet", () => {
       whitlisted1Keypair,
       vaultAta,
     );
+  });
 
-    await warpToTimestamp(provider, (endTimestamp.toNumber() + 100) * 1000);
+  it("Success elapsed: 50% claim w/ WL-1", async () => {
+    // Vault setup:
+    const startDaysOffset = 15;
+    const endDaysOffset = 15;
+
+    const { vaultPda, vaultAta } = await initVault(
+      provider,
+      startDaysOffset,
+      endDaysOffset,
+      makerAta,
+      program,
+      merkleRoot,
+      userAllocation,
+      MIN_GRACE_PERIOD,
+      depositAmount,
+      maker,
+      mint,
+    );
+
+    const wLUserPk = whitlisted1Keypair.publicKey;
+    await claimTokens(
+      provider,
+      correctProofs,
+      wLUserPk,
+      vaultPda,
+      program,
+      mint,
+      whitlisted1Keypair,
+      vaultAta,
+    );
+  });
+
+  it("Success elapsed: 67% claim w/ WL-1", async () => {
+    // Vault setup:
+    const startDaysOffset = 20;
+    const endDaysOffset = 10;
+
+    const { vaultPda, vaultAta } = await initVault(
+      provider,
+      startDaysOffset,
+      endDaysOffset,
+      makerAta,
+      program,
+      merkleRoot,
+      userAllocation,
+      MIN_GRACE_PERIOD,
+      depositAmount,
+      maker,
+      mint,
+    );
+
+    const wLUserPk = whitlisted1Keypair.publicKey;
+    await claimTokens(
+      provider,
+      correctProofs,
+      wLUserPk,
+      vaultPda,
+      program,
+      mint,
+      whitlisted1Keypair,
+      vaultAta,
+    );
+  });
+
+  it("Success elapsed: +100% claim w/ WL-1", async () => {
+    // Vault setup:
+    const startDaysOffset = 20;
+    const endDaysOffset = -1;
+
+    const { vaultPda, vaultAta } = await initVault(
+      provider,
+      startDaysOffset,
+      endDaysOffset,
+      makerAta,
+      program,
+      merkleRoot,
+      userAllocation,
+      MIN_GRACE_PERIOD,
+      depositAmount,
+      maker,
+      mint,
+    );
+
+    const wLUserPk = whitlisted1Keypair.publicKey;
+    await claimTokens(
+      provider,
+      correctProofs,
+      wLUserPk,
+      vaultPda,
+      program,
+      mint,
+      whitlisted1Keypair,
+      vaultAta,
+    );
 
     // User WL1 already claimed their full allocation, so claiming again should fail
     try {
@@ -384,12 +431,65 @@ describe("capstone-escrow - localnet", () => {
     }
   });
 
-  it("Should fail when claiming with not whitelisted address", async () => {
+  it("Fail when claiming once grace period ended", async () => {
+    // Vault setup:
+    const startDaysOffset = 20;
+    const endDaysOffset = -7.1;
+
+    const { vaultPda, vaultAta } = await initVault(
+      provider,
+      startDaysOffset,
+      endDaysOffset,
+      makerAta,
+      program,
+      merkleRoot,
+      userAllocation,
+      MIN_GRACE_PERIOD,
+      depositAmount,
+      maker,
+      mint,
+    );
+
+    const wLUserPk = whitlisted1Keypair.publicKey;
     try {
-      const incorrectProofs = getProofs(
-        merkleData,
-        whitlisted2Keypair.publicKey,
+      await claimTokens(
+        provider,
+        correctProofs,
+        wLUserPk,
+        vaultPda,
+        program,
+        mint,
+        whitlisted1Keypair,
+        vaultAta,
       );
+
+      // If we reach here, the test should fail
+      expect.fail("Expected transaction to fail, but it succeeded");
+    } catch (error) {
+      expect(error.toString()).to.include("VaultNotActive");
+    }
+  });
+
+  it("Fail when claiming with not whitelisted address", async () => {
+    try {
+      // Vault setup:
+      const startDaysOffset = 20;
+      const endDaysOffset = 20;
+
+      const { vaultPda, vaultAta } = await initVault(
+        provider,
+        startDaysOffset,
+        endDaysOffset,
+        makerAta,
+        program,
+        merkleRoot,
+        userAllocation,
+        MIN_GRACE_PERIOD,
+        depositAmount,
+        maker,
+        mint,
+      );
+
       const userPk = notWhitelistedKeypair.publicKey;
 
       await claimTokens(
@@ -406,63 +506,7 @@ describe("capstone-escrow - localnet", () => {
       // If we reach here, the test should fail
       expect.fail("Expected transaction to fail, but it succeeded");
     } catch (err) {
-      // Anchor error codes are usually here
       expect(err.toString()).to.include("InvalidProof");
-    }
-  });
-
-  it("Should fail with invalid deposit", async () => {
-    try {
-      // mint more tokens to maker so he can deposit multiple times
-      await mintTo(
-        provider.connection,
-        provider.wallet.payer,
-        mint,
-        makerAta,
-        maker,
-        depositAmount,
-      );
-
-      //   using new seed to initialize new vault
-      const newSeed = seed.add(new anchor.BN(1));
-      const [newVaultPda] = anchor.web3.PublicKey.findProgramAddressSync(
-        [
-          Buffer.from("vault"),
-          maker.toBuffer(),
-          newSeed.toArrayLike(Buffer, "le", 8),
-        ],
-        program.programId,
-      );
-      const newVaultAta = getAssociatedTokenAddressSync(
-        mint,
-        newVaultPda,
-        true,
-      );
-
-      await program.methods
-        .initialize(
-          newSeed,
-          Array.from(merkleRoot),
-          startTimestamp,
-          endTimestamp,
-          new anchor.BN(userAllocation),
-          new anchor.BN(30 * 24 * 60 * 60),
-          new anchor.BN(depositAmount + 1),
-        )
-        .accountsStrict({
-          payer: maker,
-          vault: newVaultPda,
-          mintToClaim: mint,
-          payerAta: makerAta,
-          vaultAta: newVaultAta,
-          systemProgram: anchor.web3.SystemProgram.programId,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-        })
-        .rpc();
-      expect.fail("Expected transaction to fail, but it succeeded");
-    } catch (err) {
-      expect(err.toString()).to.include("InvalidDeposit");
     }
   });
 });

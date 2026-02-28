@@ -7,9 +7,9 @@ skip-lint = false
 
 [programs.localnet]
 capstone_escrow = "3uc4VYyZysCNZ3zKGbcbNnARFi2fHEPrBSSCXGC5Qjwf"
-counter_workshop = "BYUcc691Vjc4ZcyMX7j7gAiFdQQv5usu3CJkrQXLqJ6B"
-simple_escrow = "6i4KGtUUZVSxiJfwySQAoKQVo14FZyaSNUBuKPsJD5cj"
-simple_vault = "AvnLFFmAEhgb24GCcuPAXxeQjXiGCJ97W55wewnF7dWW"
+# counter_workshop = "BYUcc691Vjc4ZcyMX7j7gAiFdQQv5usu3CJkrQXLqJ6B"
+# simple_escrow = "6i4KGtUUZVSxiJfwySQAoKQVo14FZyaSNUBuKPsJD5cj"
+# simple_vault = "AvnLFFmAEhgb24GCcuPAXxeQjXiGCJ97W55wewnF7dWW"
 
 [programs.devnet]
 capstone_escrow = "3uc4VYyZysCNZ3zKGbcbNnARFi2fHEPrBSSCXGC5Qjwf"
