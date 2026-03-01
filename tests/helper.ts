@@ -147,6 +147,7 @@ export async function claimTokens(
   mint: anchor.web3.PublicKey,
   signer: anchor.web3.Keypair,
   vaultAta: anchor.web3.PublicKey,
+  testName: string,
 ) {
   const [claimVaultPda] = anchor.web3.PublicKey.findProgramAddressSync(
     [Buffer.from("claim_vault"), vaultPda.toBuffer(), userPk.toBuffer()],
@@ -238,22 +239,13 @@ export async function claimTokens(
     new anchor.BN(initialUserBalance),
   );
 
-  console.log("balance check claim:", {
-    // userPk: userPk.toBase58(),
-    mint: mint.toBase58(),
-    elapsedPercentage: `${elapsedPercentage}%`,
-    vaultBalance,
-    toBeClaimed: userVaultBalance,
-    claimedSoFar: finalUserBalance,
-    percentageClaimed: `${Math.round(
-      (new anchor.BN(finalUserBalance)
-        .div(new anchor.BN(allocation))
-        .toNumber() *
-        10000) /
-        100,
-    )}%`,
-    claimedThisRound: claimedAmount.toString(),
-  });
+  // console.log(
+  //   `elapsed: ${elapsedPercentage}% | vaultBalance: ${formatTokens(
+  //     vaultBalance,
+  //   )} | unvested: ${formatTokens(userVaultBalance)} | % claimed: ${
+  //     Math.round((Number(finalUserBalance) / allocation) * 10000) / 100
+  //   }% | claimedThisRound: ${formatTokens(claimedAmount.toString())}`,
+  // );
 
   return { userVaultAta, userAta, claimVaultPda };
 }
@@ -262,12 +254,34 @@ export const fundWallets = async (
   provider: anchor.AnchorProvider,
   wallets: anchor.web3.PublicKey[],
 ) => {
-  await Promise.all(
-    wallets.map(async (walletPk) => {
-      provider.connection.requestAirdrop(
-        walletPk,
-        10 * anchor.web3.LAMPORTS_PER_SOL,
-      );
-    }),
-  );
+  if (!provider.connection.rpcEndpoint.includes("devnet")) {
+    await Promise.all(
+      wallets.map(async (walletPk) => {
+        provider.connection.requestAirdrop(
+          walletPk,
+          10 * anchor.web3.LAMPORTS_PER_SOL,
+        );
+      }),
+    );
+  }
+  // await checkSolBalance(provider, wallets, 9);
+};
+
+const formatTokens = (amount: string, decimals = 6) =>
+  (Number(amount) / 10 ** decimals).toLocaleString();
+
+export const checkSolBalance = async (
+  provider: anchor.AnchorProvider,
+  pubKeys: anchor.web3.PublicKey[],
+  decimals = 9,
+) => {
+  for (const walletPk of pubKeys) {
+    const balance = await provider.connection.getBalance(walletPk);
+    console.log(
+      `${walletPk.toBase58().slice(0, 6)} balance: ${formatTokens(
+        balance.toString(),
+        decimals,
+      )}`,
+    );
+  }
 };

@@ -11,6 +11,7 @@ pub struct Clawback<'info> {
     #[account(
         mut, 
         seeds = [b"vault", maker.key().as_ref(), vault.seed.to_le_bytes().as_ref()],
+        constraint = vault.maker == maker.key(),
         bump = vault.bump
     )]
     pub vault: Account<'info, Vault>,

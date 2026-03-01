@@ -6,6 +6,12 @@ use anchor_spl::{
 
 use crate::{errors::MyError, transfer_tokens, Vault};
 
+// for test purposes reduced to 10 seconds
+const MIN_GRACE_PERIOD: u64 = 10; // 10 seconds
+
+// TODO: uncomment for production
+// const MIN_GRACE_PERIOD: u64=7 * 24 * 60 * 60;
+
 #[derive(Accounts)]
 #[instruction(seed: u64)]
 pub struct Init<'info> {
@@ -120,7 +126,7 @@ impl<'info> Init<'info> {
         if *user_allocation == 0 {
             return err!(MyError::InvalidUserAllocation);
         }
-        if *clawback_buffer < 7 * 24 * 60 * 60 {
+        if *clawback_buffer < MIN_GRACE_PERIOD  {
             return err!(MyError::InvalidClawbackPeriod);
         }
         Ok(())
