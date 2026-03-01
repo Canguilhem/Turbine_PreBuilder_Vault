@@ -12,28 +12,19 @@ import {
 import {
   claimTokens,
   fundWallets,
-  getCurrentTimestamp,
   getProofs,
   initVault,
   loadKeypairs,
   loadMerkleData,
 } from "./helper";
 
-describe("capstone-escrow - localnet", () => {
+describe("capstone-escrow", () => {
   const provider = anchor.AnchorProvider.env();
 
   anchor.setProvider(provider);
 
   const program = anchor.workspace.capstoneEscrow as Program<CapstoneEscrow>;
   const maker = provider.wallet.publicKey;
-
-  //   read private keys and get user public keys
-  const {
-    whitlisted1Keypair,
-    whitlisted2Keypair,
-    creatorKeypair,
-    notWhitelistedKeypair,
-  } = loadKeypairs();
 
   let mint: anchor.web3.PublicKey;
   let makerAta: anchor.web3.PublicKey;
@@ -49,13 +40,7 @@ describe("capstone-escrow - localnet", () => {
 
   before(async () => {
     // airdrop users
-    await fundWallets(provider, [
-      maker,
-      whitlisted1Keypair.publicKey,
-      whitlisted2Keypair.publicKey,
-      creatorKeypair.publicKey,
-      notWhitelistedKeypair.publicKey,
-    ]);
+    await fundWallets(provider, [maker]);
 
     // Create mint (6 decimals)
     mint = await createMint(
@@ -268,6 +253,38 @@ describe("Claim tokens at diffrent times", () => {
     );
   });
 
+  it("Success - Claim before start -> transfer to user_vault_ata", async () => {
+    // Vault setup:
+    const startDaysOffset = -1;
+    const endDaysOffset = 11;
+
+    const { vaultPda, vaultAta } = await initVault(
+      provider,
+      startDaysOffset,
+      endDaysOffset,
+      makerAta,
+      program,
+      merkleRoot,
+      userAllocation,
+      MIN_GRACE_PERIOD,
+      depositAmount,
+      maker,
+      mint,
+    );
+
+    const wLUserPk = whitlisted1Keypair.publicKey;
+    await claimTokens(
+      provider,
+      correctProofs,
+      wLUserPk,
+      vaultPda,
+      program,
+      mint,
+      whitlisted1Keypair,
+      vaultAta,
+    );
+  });
+
   it("Success elapsed: 10% claim w/ WL-1", async () => {
     // Vault setup:
     const startDaysOffset = 1;
@@ -299,8 +316,6 @@ describe("Claim tokens at diffrent times", () => {
       vaultAta,
     );
 
-    // jumping to end of schedule
-    // await warpToTimestamp(provider, (endTimestamp.toNumber() + 10) * 1000);
     await new Promise((r) => setTimeout(r, 5000));
 
     // using incorrect proof on second claim shouldn't fail

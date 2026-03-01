@@ -8,44 +8,6 @@ import {
 import { expect } from "chai";
 import { readFileSync } from "fs";
 
-export function calculateExpectedVested(
-  now: number,
-  start: number,
-  end: number,
-  allocation: number,
-): number {
-  console.log({
-    now,
-    start,
-    end,
-  });
-  if (now <= start) return 0;
-  if (now >= end) return allocation;
-  const elapsed = new anchor.BN(now).sub(new anchor.BN(start));
-  const timeWindow = new anchor.BN(end).sub(new anchor.BN(start));
-  const alloc = new anchor.BN(allocation);
-
-  console.log({
-    elapsed: elapsed.toString(),
-    timeWindow: timeWindow.toString(),
-    alloc: alloc.toString(),
-    res: alloc.mul(elapsed).div(timeWindow).toString(),
-  });
-
-  return alloc.mul(elapsed).div(timeWindow).toNumber();
-}
-
-export async function getTokenBalanceOrZero(
-  connection: anchor.web3.Connection,
-  ata: anchor.web3.PublicKey,
-): Promise<string> {
-  try {
-    return (await connection.getTokenAccountBalance(ata)).value.amount;
-  } catch {
-    return "0";
-  }
-}
-
 export const getCurrentTimestamp = async (provider) => {
   const slot = await provider.connection.getSlot();
   const blockTime = await provider.connection.getBlockTime(slot);
@@ -309,28 +271,3 @@ export const fundWallets = async (
     }),
   );
 };
-
-// export const warpToTimestamp = async (
-//   provider: anchor.AnchorProvider,
-//   timestampInMS: number,
-// ) => {
-//   const response = await fetch(provider.connection.rpcEndpoint, {
-//     method: "POST",
-//     headers: { "Content-Type": "application/json" },
-//     body: JSON.stringify({
-//       jsonrpc: "2.0",
-//       id: Math.floor(Math.random() * 1000000),
-//       method: "surfnet_timeTravel",
-//       params: [{ absoluteTimestamp: timestampInMS }],
-//     }),
-//   });
-//   const result: any = await response.json();
-//   if (result?.error) {
-//     console.log(JSON.stringify(result, null, 2));
-//     throw new Error(result.error.message);
-//   }
-//   //   need to produce a block to confirm the time travel
-//   await provider.connection.requestAirdrop(provider.wallet.publicKey, 0);
-//   await new Promise((r) => setTimeout(r, 1000));
-//   return result.result;
-// };
